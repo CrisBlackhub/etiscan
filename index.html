@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f0f0f">
+<title>EtiScan — Lector de Etiquetas</title>
+<link rel="manifest" href="manifest.json">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #232323;
+    --border: #2e2e2e;
+    --accent: #f5a623;
+    --accent2: #e8891a;
+    --text: #f0ede8;
+    --muted: #7a7670;
+    --success: #4caf50;
+    --danger: #e24b4a;
+    --info: #378add;
+    --radius: 14px;
+    --font: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { background:var(--bg); color:var(--text); font-family:var(--font); min-height:100vh; overflow-x:hidden; }
+
+  /* SCREENS */
+  .screen { display:none; min-height:100vh; flex-direction:column; }
+  .screen.active { display:flex; }
+
+  /* HEADER */
+  .header { padding:52px 20px 16px; display:flex; align-items:center; gap:12px; }
+  .header h1 { font-size:22px; font-weight:600; letter-spacing:-0.5px; }
+  .header .logo { width:36px; height:36px; background:var(--accent); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px; }
+  .back-btn { width:36px; height:36px; background:var(--surface2); border:none; border-radius:10px; color:var(--text); font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+
+  /* HOME */
+  #home { padding:0; }
+  .hero { padding:20px; }
+  .hero p { color:var(--muted); font-size:14px; line-height:1.6; margin-top:4px; }
+  .scan-zone { margin:16px 20px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; position:relative; }
+  .scan-zone video { width:100%; display:block; max-height:52vw; object-fit:cover; background:#000; }
+  .scan-zone canvas.overlay { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
+  .scan-reticle { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+  .scan-reticle-inner { width:70%; height:40%; border:2px solid var(--accent); border-radius:8px; position:relative; }
+  .scan-reticle-inner::before, .scan-reticle-inner::after { content:''; position:absolute; width:20px; height:20px; }
+  .scan-reticle-inner::before { top:-2px; left:-2px; border-top:3px solid var(--accent); border-left:3px solid var(--accent); }
+  .scan-reticle-inner::after { bottom:-2px; right:-2px; border-bottom:3px solid var(--accent); border-right:3px solid var(--accent); }
+  .scan-line { position:absolute; left:0; right:0; height:2px; background:linear-gradient(90deg,transparent,var(--accent),transparent); animation:scanline 2s linear infinite; }
+  @keyframes scanline { 0%{ top:10%; } 100%{ top:90%; } }
+
+  .cam-controls { display:flex; gap:10px; padding:12px; }
+  .btn { border:none; border-radius:12px; font-family:var(--font); font-size:14px; font-weight:500; cursor:pointer; padding:12px 18px; transition:all .15s; display:flex; align-items:center; gap:8px; justify-content:center; }
+  .btn-primary { background:var(--accent); color:#1a0f00; flex:1; font-size:15px; padding:14px; }
+  .btn-primary:active { background:var(--accent2); transform:scale(0.98); }
+  .btn-secondary { background:var(--surface2); color:var(--text); border:1px solid var(--border); }
+  .btn-secondary:active { opacity:.7; }
+  .btn-ghost { background:transparent; color:var(--muted); }
+  .btn-sm { padding:8px 14px; font-size:13px; }
+  .btn-danger { background:var(--danger); color:#fff; }
+  .btn-success { background:var(--success); color:#fff; }
+
+  .capture-btn-wrap { padding:0 20px 8px; }
+  .capture-btn { width:100%; background:var(--accent); color:#1a0f00; font-size:16px; font-weight:600; padding:16px; border-radius:14px; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px; }
+  .capture-btn .icon { font-size:22px; }
+  .capture-btn:active { transform:scale(0.97); background:var(--accent2); }
+
+  .status-bar { margin:0 20px 16px; background:var(--surface); border-radius:10px; padding:10px 14px; font-size:13px; color:var(--muted); display:flex; align-items:center; gap:8px; }
+  .status-dot { width:8px; height:8px; border-radius:50%; background:var(--muted); }
+  .status-dot.active { background:var(--success); box-shadow:0 0 0 3px rgba(76,175,80,.25); }
+
+  /* HISTORY */
+  .section-title { padding:0 20px 10px; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; }
+  .history-list { padding:0 20px 24px; display:flex; flex-direction:column; gap:8px; }
+  .history-item { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px; display:flex; align-items:center; gap:12px; cursor:pointer; }
+  .history-item:active { opacity:.7; }
+  .history-icon { width:36px; height:36px; background:var(--surface2); border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
+  .history-info { flex:1; overflow:hidden; }
+  .history-info .name { font-size:14px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .history-info .meta { font-size:12px; color:var(--muted); margin-top:2px; }
+  .history-arrow { color:var(--muted); font-size:16px; }
+  .empty-state { text-align:center; padding:48px 20px; color:var(--muted); }
+  .empty-state .icon { font-size:48px; margin-bottom:12px; opacity:.4; }
+  .empty-state p { font-size:14px; line-height:1.6; }
+
+  /* REVIEW SCREEN */
+  #review { padding:0; }
+  .review-body { flex:1; overflow-y:auto; padding:0 20px 24px; }
+  .captured-img { width:100%; border-radius:var(--radius); overflow:hidden; background:#000; margin-bottom:16px; }
+  .captured-img img { width:100%; display:block; max-height:220px; object-fit:contain; }
+  .ocr-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:12px; }
+  .ocr-card label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.8px; display:block; margin-bottom:4px; }
+  .ocr-card .ocr-text { font-size:14px; line-height:1.6; color:var(--text); }
+  .processing { display:flex; align-items:center; gap:10px; padding:20px 0; }
+  .spinner { width:20px; height:20px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; flex-shrink:0; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  .fields-grid { display:flex; flex-direction:column; gap:10px; margin-bottom:12px; }
+  .field-row { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:10px 14px; }
+  .field-row label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.8px; display:block; margin-bottom:4px; }
+  .field-row input { background:transparent; border:none; outline:none; color:var(--text); font-size:15px; font-family:var(--font); width:100%; }
+  .field-row input::placeholder { color:var(--muted); }
+  .field-row.editable { border-color:var(--accent); }
+
+  .action-bar { padding:12px 20px 32px; display:flex; gap:10px; }
+
+  /* LABEL PREVIEW SCREEN */
+  #labelpreview { padding:0; }
+  .preview-body { flex:1; overflow-y:auto; padding:0 20px 24px; }
+  .label-card { background:#fff; border-radius:var(--radius); padding:20px; margin-bottom:16px; color:#000; position:relative; }
+  .label-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; }
+  .company-name { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1.5px; color:#444; }
+  .label-date { font-size:10px; color:#888; }
+  .label-client { font-size:22px; font-weight:700; color:#111; margin-bottom:4px; letter-spacing:-0.5px; line-height:1.2; }
+  .label-desc { font-size:12px; color:#555; margin-bottom:12px; line-height:1.5; }
+  .label-row { display:flex; gap:16px; margin-bottom:8px; }
+  .label-field { flex:1; }
+  .label-field span { display:block; font-size:9px; text-transform:uppercase; letter-spacing:.8px; color:#999; margin-bottom:1px; }
+  .label-field strong { font-size:13px; font-weight:600; color:#222; }
+  .barcode-wrap { text-align:center; margin-top:14px; padding-top:14px; border-top:1px solid #eee; }
+  .barcode-wrap svg { max-width:100%; }
+  .barcode-code { font-size:11px; color:#888; margin-top:4px; letter-spacing:1px; }
+
+  .label-size-btns { display:flex; gap:8px; margin-bottom:16px; }
+  .size-btn { flex:1; background:var(--surface2); border:1px solid var(--border); border-radius:10px; color:var(--muted); font-size:12px; font-family:var(--font); padding:8px; cursor:pointer; text-align:center; }
+  .size-btn.sel { background:var(--surface); border-color:var(--accent); color:var(--accent); }
+
+  .printer-section { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:12px; }
+  .printer-section h3 { font-size:13px; color:var(--muted); margin-bottom:10px; }
+  .printer-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .printer-row label { font-size:13px; flex:1; }
+  .printer-row input { background:var(--surface2); border:1px solid var(--border); border-radius:8px; color:var(--text); font-family:var(--font); font-size:14px; padding:8px 10px; flex:2; outline:none; }
+  .printer-row input:focus { border-color:var(--accent); }
+  .conn-status { display:flex; align-items:center; gap:6px; font-size:12px; }
+  .conn-dot { width:8px; height:8px; border-radius:50%; background:var(--muted); }
+  .conn-dot.ok { background:var(--success); }
+  .conn-dot.err { background:var(--danger); }
+
+  .print-btn { width:100%; padding:16px; background:var(--accent); color:#1a0f00; border:none; border-radius:14px; font-size:16px; font-weight:700; cursor:pointer; font-family:var(--font); display:flex; align-items:center; justify-content:center; gap:10px; }
+  .print-btn:active { background:var(--accent2); transform:scale(0.98); }
+  .print-btn:disabled { opacity:.4; cursor:default; }
+
+  .toast { position:fixed; bottom:32px; left:50%; transform:translateX(-50%) translateY(100px); background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:12px 20px; font-size:14px; white-space:nowrap; z-index:999; transition:transform .3s ease; pointer-events:none; }
+  .toast.show { transform:translateX(-50%) translateY(0); }
+  .toast.success { background:#1e3a1f; border-color:#4caf50; color:#80c883; }
+  .toast.error { background:#3a1e1e; border-color:#e24b4a; color:#f07070; }
+
+  /* SETTINGS */
+  #settings { padding:0; }
+  .settings-body { flex:1; padding:0 20px 24px; }
+  .settings-group { margin-bottom:20px; }
+  .settings-group h3 { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; }
+  .settings-item { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:6px; display:flex; align-items:center; gap:10px; }
+  .settings-item label { font-size:14px; flex:1; }
+  .settings-item input[type=text], .settings-item input[type=number] { background:var(--surface2); border:1px solid var(--border); border-radius:8px; color:var(--text); font-family:var(--font); font-size:13px; padding:6px 10px; width:150px; outline:none; text-align:right; }
+  .settings-item input:focus { border-color:var(--accent); }
+  .toggle { width:44px; height:26px; background:var(--border); border-radius:13px; position:relative; cursor:pointer; flex-shrink:0; transition:.2s; }
+  .toggle.on { background:var(--accent); }
+  .toggle::after { content:''; position:absolute; width:20px; height:20px; background:#fff; border-radius:50%; top:3px; left:3px; transition:.2s; }
+  .toggle.on::after { left:21px; }
+
+  .api-note { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px 14px; font-size:13px; color:var(--muted); line-height:1.6; margin-top:8px; }
+  .api-note strong { color:var(--text); }
+  .copy-zpl-btn { margin:0 20px; }
+
+  @media(prefers-color-scheme:light){
+    :root {
+      --bg:#f4f1eb; --surface:#fff; --surface2:#f0ede6; --border:#e0dcd4;
+      --text:#1a1916; --muted:#8a8580;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- ==================== HOME ==================== -->
+<div class="screen active" id="home">
+  <div class="header">
+    <div class="logo">📦</div>
+    <div style="flex:1">
+      <h1>EtiScan</h1>
+    </div>
+    <button class="btn btn-secondary btn-sm" onclick="goTo('settings')">⚙</button>
+  </div>
+  <div class="hero">
+    <p>Apunta la cámara a la etiqueta de la caja y presiona Capturar</p>
+  </div>
+
+  <div class="scan-zone">
+    <video id="video" autoplay playsinline muted></video>
+    <div class="scan-reticle">
+      <div class="scan-reticle-inner">
+        <div class="scan-line"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="capture-btn-wrap">
+    <button class="capture-btn" onclick="captureImage()">
+      <span class="icon">📸</span> Capturar Etiqueta
+    </button>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-dot" id="camDot"></div>
+    <span id="camStatus">Iniciando cámara…</span>
+    <span style="margin-left:auto; font-size:11px;" id="camBtn" onclick="startCamera()" style="cursor:pointer;color:var(--accent)"></span>
+  </div>
+
+  <div class="section-title">Historial reciente</div>
+  <div class="history-list" id="historyList">
+    <div class="empty-state">
+      <div class="icon">🏷️</div>
+      <p>Aún no hay etiquetas escaneadas.<br>¡Empieza capturando una caja!</p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== REVIEW ==================== -->
+<div class="screen" id="review">
+  <div class="header">
+    <button class="back-btn" onclick="goTo('home')">←</button>
+    <h1>Revisar Lectura</h1>
+  </div>
+  <div class="review-body">
+    <div class="captured-img" id="capturedImgWrap" style="display:none">
+      <img id="capturedImg" src="" alt="Etiqueta capturada">
+    </div>
+
+    <div id="processingIndicator" class="processing">
+      <div class="spinner"></div>
+      <span id="processingText">Analizando etiqueta con IA…</span>
+    </div>
+
+    <div id="ocrResultCard" class="ocr-card" style="display:none">
+      <label>Texto detectado</label>
+      <div class="ocr-text" id="ocrRawText"></div>
+    </div>
+
+    <div id="fieldsSection" style="display:none">
+      <div class="section-title" style="padding:12px 0 8px;">Datos extraídos — edita si es necesario</div>
+      <div class="fields-grid">
+        <div class="field-row editable">
+          <label>Nombre de Cliente</label>
+          <input id="fCliente" placeholder="Ej: Distribuidora Norte" />
+        </div>
+        <div class="field-row editable">
+          <label>Descripción / Producto</label>
+          <input id="fDesc" placeholder="Ej: Cajas de cartón 50x40x30" />
+        </div>
+        <div class="field-row">
+          <label>Peso / Volumen</label>
+          <input id="fPeso" placeholder="Ej: 12 kg" />
+        </div>
+        <div class="field-row">
+          <label>Número de Bulto / Guía</label>
+          <input id="fBulto" placeholder="Ej: B-001" />
+        </div>
+        <div class="field-row">
+          <label>Destino / Dirección</label>
+          <input id="fDestino" placeholder="Ej: Av. Libertad 1234, Santiago" />
+        </div>
+        <div class="field-row">
+          <label>Referencia Original</label>
+          <input id="fRef" placeholder="Ej: OC-2024-5821" />
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="action-bar" id="reviewActions" style="display:none">
+    <button class="btn btn-secondary" onclick="retake()">Volver a capturar</button>
+    <button class="btn btn-primary" onclick="generateLabel()">Generar Etiqueta →</button>
+  </div>
+</div>
+
+<!-- ==================== LABEL PREVIEW ==================== -->
+<div class="screen" id="labelpreview">
+  <div class="header">
+    <button class="back-btn" onclick="goTo('review')">←</button>
+    <h1>Etiqueta Generada</h1>
+  </div>
+  <div class="preview-body">
+
+    <div class="section-title" style="padding:4px 0 8px;">Tamaño de etiqueta</div>
+    <div class="label-size-btns">
+      <button class="size-btn sel" data-size="4x6" onclick="selectSize(this)">4×6 pulgadas</button>
+      <button class="size-btn" data-size="4x4" onclick="selectSize(this)">4×4 pulgadas</button>
+      <button class="size-btn" data-size="2x1" onclick="selectSize(this)">2×1 pulgadas</button>
+    </div>
+
+    <!-- Label Preview (white) -->
+    <div class="label-card" id="labelCard">
+      <div class="label-header">
+        <span class="company-name" id="lblCompany">Mi Empresa</span>
+        <span class="label-date" id="lblDate"></span>
+      </div>
+      <div class="label-client" id="lblClient"></div>
+      <div class="label-desc" id="lblDesc"></div>
+      <div class="label-row">
+        <div class="label-field">
+          <span>Bulto / Guía</span>
+          <strong id="lblBulto"></strong>
+        </div>
+        <div class="label-field">
+          <span>Peso</span>
+          <strong id="lblPeso"></strong>
+        </div>
+      </div>
+      <div class="label-row">
+        <div class="label-field">
+          <span>Destino</span>
+          <strong id="lblDestino" style="font-size:11px;"></strong>
+        </div>
+        <div class="label-field">
+          <span>Referencia</span>
+          <strong id="lblRef"></strong>
+        </div>
+      </div>
+      <div class="barcode-wrap">
+        <svg id="barcodesvg"></svg>
+        <div class="barcode-code" id="barcodeCode"></div>
+      </div>
+    </div>
+
+    <!-- Printer config -->
+    <div class="printer-section">
+      <h3>🖨️ Impresora Zebra</h3>
+      <div class="printer-row">
+        <label>IP Impresora</label>
+        <input type="text" id="printerIp" value="192.168.1.100" placeholder="192.168.1.100" oninput="savePrinterConfig()">
+      </div>
+      <div class="printer-row">
+        <label>Puerto</label>
+        <input type="text" id="printerPort" value="9100" placeholder="9100" oninput="savePrinterConfig()">
+      </div>
+      <div class="printer-row">
+        <label>Estado</label>
+        <div class="conn-status">
+          <div class="conn-dot" id="connDot"></div>
+          <span id="connStatus">Sin verificar</span>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="testPrinter()" style="margin-left:auto">Probar</button>
+      </div>
+    </div>
+
+    <!-- Imprimir en cualquier impresora -->
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:12px;">
+      <div style="font-size:13px; color:var(--muted); margin-bottom:10px;">🖨️ Cualquier impresora (Canon, HP, Brother...)</div>
+      <button class="btn btn-secondary" style="width:100%;" onclick="printViaDialog()">
+        🖨️ Imprimir / Guardar como PDF
+      </button>
+      <div style="font-size:12px; color:var(--muted); line-height:1.5; margin-top:8px;">Abre el diálogo de impresión del sistema. Funciona con cualquier impresora conectada.</div>
+    </div>
+
+    <button class="btn btn-secondary" style="width:100%; margin-bottom:10px;" onclick="copyZpl()">
+      📋 Copiar ZPL (para Zebra manual)
+    </button>
+
+    <button class="print-btn" id="printBtn" onclick="printLabel()">
+      🖨️ Imprimir en Zebra (red WiFi)
+    </button>
+    <div style="height:20px;"></div>
+  </div>
+</div>
+
+<!-- ==================== SETTINGS ==================== -->
+<div class="screen" id="settings">
+  <div class="header">
+    <button class="back-btn" onclick="goTo('home')">←</button>
+    <h1>Configuración</h1>
+  </div>
+  <div class="settings-body">
+    <div class="settings-group">
+      <h3>Empresa</h3>
+      <div class="settings-item">
+        <label>Nombre empresa</label>
+        <input type="text" id="cfgCompany" value="Mi Empresa" oninput="saveConfig()">
+      </div>
+      <div class="settings-item">
+        <label>Prefijo código de barra</label>
+        <input type="text" id="cfgPrefix" value="ETI" oninput="saveConfig()">
+      </div>
+    </div>
+    <div class="settings-group">
+      <h3>IA / OCR</h3>
+      <div class="settings-item">
+        <label>API Key Anthropic (Claude)</label>
+        <input type="text" id="cfgApiKey" placeholder="sk-ant-..." oninput="saveConfig()">
+      </div>
+      <div class="api-note">
+        <strong>¿Cómo obtener la API Key?</strong><br>
+        Visita <a href="https://console.anthropic.com" style="color:var(--accent)">console.anthropic.com</a>, crea una cuenta y copia tu clave de API. Pégala arriba para habilitar el análisis inteligente de etiquetas.
+      </div>
+    </div>
+    <div class="settings-group">
+      <h3>Impresora Zebra</h3>
+      <div class="settings-item">
+        <label>IP por defecto</label>
+        <input type="text" id="cfgPrinterIp" value="192.168.1.100" oninput="saveConfig()">
+      </div>
+      <div class="settings-item">
+        <label>Puerto por defecto</label>
+        <input type="number" id="cfgPrinterPort" value="9100" oninput="saveConfig()">
+      </div>
+      <div class="settings-item">
+        <label>Auto-imprimir al escanear</label>
+        <div class="toggle" id="toggleAuto" onclick="toggleAuto()"></div>
+      </div>
+    </div>
+    <div class="settings-group">
+      <h3>Cámara</h3>
+      <div class="settings-item">
+        <label>Cámara trasera</label>
+        <div class="toggle on" id="toggleRear" onclick="toggleRear()"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<canvas id="captureCanvas" style="display:none"></canvas>
+
+<script>
+// ======================== STATE ========================
+let cfg = {
+  company: 'Mi Empresa',
+  prefix: 'ETI',
+  apiKey: '',
+  printerIp: '192.168.1.100',
+  printerPort: '9100',
+  autoprint: false,
+  rearCamera: true
+};
+let history = [];
+let currentData = {};
+let currentImageDataUrl = null;
+let labelSize = '4x6';
+let videoStream = null;
+
+// ======================== INIT ========================
+function init() {
+  const saved = localStorage.getItem('etiscan_cfg');
+  if (saved) { try { cfg = { ...cfg, ...JSON.parse(saved) }; } catch(e){} }
+  const savedHist = localStorage.getItem('etiscan_history');
+  if (savedHist) { try { history = JSON.parse(savedHist); } catch(e){} }
+
+  document.getElementById('cfgCompany').value = cfg.company;
+  document.getElementById('cfgPrefix').value = cfg.prefix;
+  document.getElementById('cfgApiKey').value = cfg.apiKey;
+  document.getElementById('cfgPrinterIp').value = cfg.printerIp;
+  document.getElementById('cfgPrinterPort').value = cfg.printerPort;
+  document.getElementById('printerIp').value = cfg.printerIp;
+  document.getElementById('printerPort').value = cfg.printerPort;
+  if (cfg.autoprint) document.getElementById('toggleAuto').classList.add('on');
+  if (!cfg.rearCamera) document.getElementById('toggleRear').classList.remove('on');
+
+  renderHistory();
+  startCamera();
+}
+
+// ======================== NAVIGATION ========================
+function goTo(screen) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(screen).classList.add('active');
+  if (screen === 'home') startCamera();
+  else if (screen !== 'home') stopCamera();
+}
+
+// ======================== CAMERA ========================
+async function startCamera() {
+  const dot = document.getElementById('camDot');
+  const status = document.getElementById('camStatus');
+  try {
+    if (videoStream) stopCamera();
+    const constraints = {
+      video: {
+        facingMode: cfg.rearCamera ? 'environment' : 'user',
+        width: { ideal: 1920 }, height: { ideal: 1080 }
+      }
+    };
+    videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+    document.getElementById('video').srcObject = videoStream;
+    dot.classList.add('active');
+    status.textContent = 'Cámara lista';
+  } catch(e) {
+    dot.classList.remove('active');
+    status.textContent = 'Sin acceso a cámara — usa HTTPS';
+  }
+}
+
+function stopCamera() {
+  if (videoStream) {
+    videoStream.getTracks().forEach(t => t.stop());
+    videoStream = null;
+  }
+}
+
+// ======================== CAPTURE ========================
+function captureImage() {
+  const video = document.getElementById('video');
+  if (!video.srcObject) { showToast('Cámara no disponible', 'error'); return; }
+  const canvas = document.getElementById('captureCanvas');
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0);
+  currentImageDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+
+  goTo('review');
+  const imgEl = document.getElementById('capturedImg');
+  imgEl.src = currentImageDataUrl;
+  document.getElementById('capturedImgWrap').style.display = 'block';
+  document.getElementById('ocrResultCard').style.display = 'none';
+  document.getElementById('fieldsSection').style.display = 'none';
+  document.getElementById('reviewActions').style.display = 'none';
+  document.getElementById('processingIndicator').style.display = 'flex';
+  document.getElementById('processingText').textContent = 'Analizando etiqueta con IA…';
+
+  analyzeWithClaude(currentImageDataUrl);
+}
+
+function retake() {
+  goTo('home');
+}
+
+// ======================== AI ANALYSIS ========================
+async function analyzeWithClaude(imageDataUrl) {
+  const base64 = imageDataUrl.split(',')[1];
+  try {
+    document.getElementById('processingText').textContent = 'Enviando imagen a Claude…';
+    // Llama al proxy de Netlify (evita CORS y mantiene la API key segura en el servidor)
+    const response = await fetch('/.netlify/functions/claude', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-opus-4-5',
+        max_tokens: 800,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } },
+            { type: 'text', text: `Analiza esta etiqueta de caja de envío. Extrae toda la información posible y responde ÚNICAMENTE con un JSON válido sin markdown con estos campos:
+{
+  "raw_text": "todo el texto visible en la etiqueta",
+  "cliente": "nombre del destinatario o empresa",
+  "descripcion": "descripción del contenido o tipo de producto",
+  "peso": "peso o dimensiones si aparece",
+  "bulto": "número de bulto, guía, tracking o referencia interna",
+  "destino": "dirección o destino completo",
+  "referencia": "número de orden, factura u otro código de referencia",
+  "confianza": "alta|media|baja"
+}
+Si un campo no aparece en la etiqueta, deja el string vacío.` }
+          ]
+        }]
+      })
+    });
+    const data = await response.json();
+    if (data.error) throw new Error(data.error.message);
+    const text = data.content[0].text;
+    const clean = text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+    displayOCRResult(parsed);
+  } catch(e) {
+    document.getElementById('processingText').textContent = 'Error al analizar: ' + e.message;
+    setTimeout(simulateOCR, 2000);
+  }
+}
+
+function simulateOCR() {
+  // Demo mode without API key
+  document.getElementById('processingText').textContent = 'Modo demo (sin API Key)…';
+  setTimeout(() => {
+    displayOCRResult({
+      raw_text: 'DISTRIBUIDORA NORTE S.A.\nDireccion: Av. Libertad 2341, Stgo\nProducto: Cajas corrugadas 50x40x30 cm\nPeso: 14.5 kg\nGuia: GU-2024-8823\nOC: OC-2024-5001',
+      cliente: 'Distribuidora Norte S.A.',
+      descripcion: 'Cajas corrugadas 50×40×30 cm',
+      peso: '14.5 kg',
+      bulto: 'GU-2024-8823',
+      destino: 'Av. Libertad 2341, Santiago',
+      referencia: 'OC-2024-5001',
+      confianza: 'alta'
+    });
+  }, 1800);
+}
+
+function displayOCRResult(data) {
+  document.getElementById('processingIndicator').style.display = 'none';
+  document.getElementById('ocrRawText').textContent = data.raw_text || '(sin texto detectado)';
+  document.getElementById('ocrResultCard').style.display = 'block';
+  document.getElementById('fieldsSection').style.display = 'block';
+  document.getElementById('reviewActions').style.display = 'flex';
+
+  document.getElementById('fCliente').value = data.cliente || '';
+  document.getElementById('fDesc').value = data.descripcion || '';
+  document.getElementById('fPeso').value = data.peso || '';
+  document.getElementById('fBulto').value = data.bulto || '';
+  document.getElementById('fDestino').value = data.destino || '';
+  document.getElementById('fRef').value = data.referencia || '';
+
+  currentData = data;
+}
+
+// ======================== GENERATE LABEL ========================
+function generateLabel() {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('es-CL', { day:'2-digit', month:'2-digit', year:'numeric' });
+  const timeStr = now.toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit' });
+  const barcode = generateBarcodeValue();
+
+  currentData = {
+    cliente: document.getElementById('fCliente').value || 'Sin nombre',
+    descripcion: document.getElementById('fDesc').value || '',
+    peso: document.getElementById('fPeso').value || '',
+    bulto: document.getElementById('fBulto').value || '',
+    destino: document.getElementById('fDestino').value || '',
+    referencia: document.getElementById('fRef').value || '',
+    barcode, dateStr, timeStr
+  };
+
+  // Save to history
+  history.unshift({ ...currentData, id: Date.now(), imageUrl: currentImageDataUrl });
+  if (history.length > 20) history.pop();
+  localStorage.setItem('etiscan_history', JSON.stringify(history));
+
+  goTo('labelpreview');
+  renderLabelPreview();
+
+  if (cfg.autoprint) setTimeout(printLabel, 800);
+}
+
+function generateBarcodeValue() {
+  const now = new Date();
+  const yyyymmdd = now.toISOString().slice(0,10).replace(/-/g,'');
+  const seq = String(Math.floor(Math.random()*9999)).padStart(4,'0');
+  return `${cfg.prefix}${yyyymmdd}${seq}`;
+}
+
+function renderLabelPreview() {
+  document.getElementById('lblCompany').textContent = cfg.company;
+  document.getElementById('lblDate').textContent = `${currentData.dateStr} ${currentData.timeStr}`;
+  document.getElementById('lblClient').textContent = currentData.cliente;
+  document.getElementById('lblDesc').textContent = currentData.descripcion;
+  document.getElementById('lblBulto').textContent = currentData.bulto || '—';
+  document.getElementById('lblPeso').textContent = currentData.peso || '—';
+  document.getElementById('lblDestino').textContent = currentData.destino || '—';
+  document.getElementById('lblRef').textContent = currentData.referencia || '—';
+  document.getElementById('barcodeCode').textContent = currentData.barcode;
+
+  try {
+    JsBarcode('#barcodesvg', currentData.barcode, {
+      format: 'CODE128',
+      width: 2,
+      height: 50,
+      displayValue: false,
+      margin: 4
+    });
+  } catch(e) { console.warn('Barcode error', e); }
+}
+
+function selectSize(btn) {
+  document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('sel'));
+  btn.classList.add('sel');
+  labelSize = btn.dataset.size;
+}
+
+// ======================== PRINT VIA BROWSER ========================
+function printViaDialog() {
+  const d = currentData;
+  const company = cfg.company || 'Mi Empresa';
+  const fecha = (d.dateStr || '') + ' ' + (d.timeStr || '');
+
+  // Generate barcode as data URL
+  const tempSvg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  document.body.appendChild(tempSvg);
+  try { JsBarcode(tempSvg, d.barcode || 'ETI000', { format:'CODE128', width:2, height:60, displayValue:false, margin:4 }); } catch(e){}
+  const barcodeDataUrl = 'data:image/svg+xml;base64,' + btoa(new XMLSerializer().serializeToString(tempSvg));
+  document.body.removeChild(tempSvg);
+
+  const printWin = window.open('', '_blank', 'width=600,height=800');
+  printWin.document.write(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>Etiqueta - ${d.cliente || ''}</title>
+<style>
+  @page { margin: 10mm; size: A6; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Arial, sans-serif; padding: 12px; }
+  .header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom: 2px solid #111; padding-bottom:8px; margin-bottom:10px; }
+  .company { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:#444; }
+  .fecha { font-size:10px; color:#888; }
+  .cliente { font-size:24px; font-weight:700; color:#111; margin-bottom:4px; letter-spacing:-0.5px; line-height:1.2; }
+  .desc { font-size:12px; color:#555; margin-bottom:10px; line-height:1.4; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
+  .field span { display:block; font-size:9px; text-transform:uppercase; letter-spacing:.8px; color:#999; margin-bottom:1px; }
+  .field strong { font-size:13px; font-weight:600; color:#222; }
+  .barcode-wrap { text-align:center; border-top:1px solid #eee; padding-top:10px; margin-top:4px; }
+  .barcode-wrap img { max-width:100%; height:60px; }
+  .barcode-num { font-size:11px; color:#888; letter-spacing:1px; margin-top:4px; font-family:monospace; }
+  @media print { body { print-color-adjust:exact; -webkit-print-color-adjust:exact; } }
+</style>
+</head><body>
+<div class="header">
+  <span class="company">${company}</span>
+  <span class="fecha">${fecha}</span>
+</div>
+<div class="cliente">${d.cliente || 'Sin nombre'}</div>
+<div class="desc">${d.descripcion || ''}</div>
+<div class="grid">
+  <div class="field"><span>Bulto / Guía</span><strong>${d.bulto || '—'}</strong></div>
+  <div class="field"><span>Peso</span><strong>${d.peso || '—'}</strong></div>
+  <div class="field"><span>Destino</span><strong style="font-size:11px">${d.destino || '—'}</strong></div>
+  <div class="field"><span>Referencia</span><strong>${d.referencia || '—'}</strong></div>
+</div>
+<div class="barcode-wrap">
+  <img src="${barcodeDataUrl}" alt="barcode">
+  <div class="barcode-num">${d.barcode || ''}</div>
+</div>
+</body></html>`);
+  printWin.document.close();
+  printWin.onload = () => {
+    setTimeout(() => {
+      printWin.focus();
+      printWin.print();
+    }, 300);
+  };
+}
+
+// ======================== ZPL GENERATION ========================
+function generateZPL() {
+  const d = currentData;
+  const sizeMap = {
+    '4x6': { w: 1216, h: 1824 },
+    '4x4': { w: 1216, h: 1216 },
+    '2x1': { w: 608, h: 304 }
+  };
+  const sz = sizeMap[labelSize] || sizeMap['4x6'];
+  const barcode = d.barcode || 'ETI00000000';
+  const cliente = (d.cliente || '').toUpperCase().substring(0,30);
+  const desc = (d.descripcion || '').substring(0,40);
+  const bulto = (d.bulto || '—').substring(0,20);
+  const peso = (d.peso || '—').substring(0,15);
+  const destino = (d.destino || '—').substring(0,45);
+  const ref = (d.referencia || '—').substring(0,20);
+  const company = (cfg.company || '').toUpperCase().substring(0,30);
+  const fecha = (d.dateStr || '') + ' ' + (d.timeStr || '');
+
+  return `^XA
+^PW${sz.w}
+^LL${sz.h}
+^CI28
+^CF0,30
+^FO30,30^GB${sz.w-60},3,3^FS
+^FO30,45^A0N,22,22^FD${company}^FS
+^FO${sz.w-300},45^A0N,18,18^FD${fecha}^FS
+^FO30,75^GB${sz.w-60},3,3^FS
+^FO30,90^A0N,55,55^FD${cliente}^FS
+^FO30,155^A0N,28,28^FD${desc}^FS
+^FO30,200^GB${sz.w-60},2,2^FS
+^FO30,215^A0N,22,22^FDBulto/Guia:^FS
+^FO200,215^A0N,22,22^FD${bulto}^FS
+^FO${sz.w/2},215^A0N,22,22^FDPeso:^FS
+^FO${sz.w/2+100},215^A0N,22,22^FD${peso}^FS
+^FO30,250^A0N,22,22^FDDestino:^FS
+^FO200,250^A0N,22,22^FD${destino}^FS
+^FO30,285^A0N,22,22^FDRef:^FS
+^FO200,285^A0N,22,22^FD${ref}^FS
+^FO30,320^GB${sz.w-60},2,2^FS
+^FO60,340^BY3,2,80
+^BCN,80,Y,N,N
+^FD${barcode}^FS
+^FO30,${sz.h-35}^GB${sz.w-60},2,2^FS
+^FO30,${sz.h-28}^A0N,16,16^FDETISCAN — etiqueta interna^FS
+^XZ`;
+}
+
+// ======================== PRINTING ========================
+async function printLabel() {
+  const ip = document.getElementById('printerIp').value.trim();
+  const port = document.getElementById('printerPort').value.trim();
+  const zpl = generateZPL();
+
+  if (!ip) { showToast('Ingresa la IP de la impresora', 'error'); return; }
+  document.getElementById('printBtn').disabled = true;
+  document.getElementById('printBtn').textContent = '⏳ Enviando…';
+  showToast('Enviando a impresora…');
+
+  try {
+    // Try direct TCP via fetch proxy or show ZPL
+    // Many Zebra printers have a HTTP API on port 80
+    const result = await sendZPLToZebra(ip, port, zpl);
+    if (result.ok) {
+      showToast('✓ Impreso correctamente', 'success');
+      document.getElementById('connDot').className = 'conn-dot ok';
+      document.getElementById('connStatus').textContent = 'Impresión enviada';
+    } else {
+      throw new Error(result.error);
+    }
+  } catch(e) {
+    showToast('No se pudo imprimir — copia el ZPL', 'error');
+    document.getElementById('connDot').className = 'conn-dot err';
+    document.getElementById('connStatus').textContent = 'Error de conexión';
+  }
+
+  document.getElementById('printBtn').disabled = false;
+  document.getElementById('printBtn').innerHTML = '🖨️ Imprimir en Zebra';
+}
+
+async function sendZPLToZebra(ip, port, zpl) {
+  // Method 1: Zebra Link-OS HTTP API (ZebraNet)
+  try {
+    const url = `http://${ip}/pstprnt`;
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: zpl,
+      signal: AbortSignal.timeout(5000)
+    });
+    if (r.ok || r.status === 200) return { ok: true };
+  } catch(e1) {
+    // Method 2: Try Zebra Web Services
+    try {
+      const url2 = `http://${ip}:${port}`;
+      const r2 = await fetch(url2, {
+        method: 'POST',
+        body: zpl,
+        signal: AbortSignal.timeout(5000)
+      });
+      if (r2.ok) return { ok: true };
+    } catch(e2) {}
+  }
+  return { ok: false, error: 'No se pudo conectar. Verifica IP, puerto y que estés en la misma red WiFi.' };
+}
+
+async function testPrinter() {
+  const ip = document.getElementById('printerIp').value.trim();
+  if (!ip) { showToast('Ingresa la IP primero', 'error'); return; }
+  document.getElementById('connStatus').textContent = 'Probando…';
+  document.getElementById('connDot').className = 'conn-dot';
+  const testZpl = `^XA^FO50,50^A0N,30,30^FDTest EtiScan^FS^XZ`;
+  const result = await sendZPLToZebra(ip, document.getElementById('printerPort').value, testZpl);
+  if (result.ok) {
+    document.getElementById('connDot').className = 'conn-dot ok';
+    document.getElementById('connStatus').textContent = 'Conectado ✓';
+    showToast('Impresora conectada', 'success');
+  } else {
+    document.getElementById('connDot').className = 'conn-dot err';
+    document.getElementById('connStatus').textContent = 'Sin conexión';
+    showToast('No se encontró la impresora', 'error');
+  }
+}
+
+function copyZpl() {
+  const zpl = generateZPL();
+  navigator.clipboard.writeText(zpl).then(() => {
+    showToast('ZPL copiado al portapapeles', 'success');
+  }).catch(() => {
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = zpl;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('ZPL copiado', 'success');
+  });
+}
+
+// ======================== HISTORY ========================
+function renderHistory() {
+  const list = document.getElementById('historyList');
+  if (!history.length) {
+    list.innerHTML = `<div class="empty-state"><div class="icon">🏷️</div><p>Aún no hay etiquetas escaneadas.<br>¡Empieza capturando una caja!</p></div>`;
+    return;
+  }
+  list.innerHTML = history.slice(0,8).map((item, i) => `
+    <div class="history-item" onclick="loadHistoryItem(${i})">
+      <div class="history-icon">📦</div>
+      <div class="history-info">
+        <div class="name">${item.cliente || 'Sin nombre'}</div>
+        <div class="meta">${item.barcode || ''} · ${item.dateStr || ''}</div>
+      </div>
+      <div class="history-arrow">›</div>
+    </div>
+  `).join('');
+}
+
+function loadHistoryItem(i) {
+  const item = history[i];
+  currentData = { ...item };
+  currentImageDataUrl = item.imageUrl || null;
+  goTo('labelpreview');
+  renderLabelPreview();
+}
+
+// ======================== CONFIG ========================
+function saveConfig() {
+  cfg.company = document.getElementById('cfgCompany').value;
+  cfg.prefix = document.getElementById('cfgPrefix').value;
+  cfg.apiKey = document.getElementById('cfgApiKey').value;
+  cfg.printerIp = document.getElementById('cfgPrinterIp').value;
+  cfg.printerPort = document.getElementById('cfgPrinterPort').value;
+  localStorage.setItem('etiscan_cfg', JSON.stringify(cfg));
+}
+
+function savePrinterConfig() {
+  cfg.printerIp = document.getElementById('printerIp').value;
+  cfg.printerPort = document.getElementById('printerPort').value;
+  localStorage.setItem('etiscan_cfg', JSON.stringify(cfg));
+}
+
+function toggleAuto() {
+  cfg.autoprint = !cfg.autoprint;
+  document.getElementById('toggleAuto').classList.toggle('on', cfg.autoprint);
+  saveConfig();
+}
+function toggleRear() {
+  cfg.rearCamera = !cfg.rearCamera;
+  document.getElementById('toggleRear').classList.toggle('on', cfg.rearCamera);
+  saveConfig();
+  if (document.getElementById('home').classList.contains('active')) startCamera();
+}
+
+// ======================== TOAST ========================
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ======================== SERVICE WORKER ========================
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+
+init();
+</script>
+</body>
+</html>
