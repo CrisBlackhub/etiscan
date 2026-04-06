@@ -248,8 +248,12 @@
       <div class="section-title" style="padding:12px 0 8px;">Datos extraídos — edita si es necesario</div>
       <div class="fields-grid">
         <div class="field-row editable" style="border-color:var(--accent); background:rgba(245,166,35,0.06);">
-          <label style="color:var(--accent)">⭐ N° Picking / Nota de Venta (7 dígitos)</label>
-          <input id="fPicking" placeholder="Ej: 1234567 o N/V 1234567" style="font-size:18px; font-weight:600;" />
+          <label style="color:var(--accent)">⭐ N° Picking (ej: 498.308)</label>
+          <input id="fPicking" placeholder="Ej: 498308" style="font-size:18px; font-weight:600;" />
+        </div>
+        <div class="field-row editable" style="border-color:#378add; background:rgba(55,138,221,0.06);">
+          <label style="color:#378add">⭐ N° Nota de Venta (ej: 3.456.705)</label>
+          <input id="fNV" placeholder="Ej: 3456705" style="font-size:18px; font-weight:600;" />
         </div>
         <div class="field-row editable">
           <label>Nombre de Cliente</label>
@@ -302,10 +306,17 @@
         <span class="label-date" id="lblDate"></span>
       </div>
       <div class="label-client" id="lblClient"></div>
-      <div class="label-desc" id="lblDesc"></div>
-      <div style="background:#fff8e6; border:2px solid #f5a623; border-radius:8px; padding:8px 12px; margin-bottom:10px;">
-        <span style="font-size:9px; text-transform:uppercase; letter-spacing:.8px; color:#b87a00; display:block; margin-bottom:2px;">N° Picking / Nota de Venta</span>
-        <strong id="lblPicking" style="font-size:22px; font-weight:800; color:#111; letter-spacing:1px;"></strong>
+      <div class="label-desc" id="lblDestino" style="font-size:16px; color:#222;"></div>
+      <div class="label-desc" id="lblDesc" style="font-size:12px; color:#777;"></div>
+      <div style="display:flex; gap:8px; margin-bottom:10px;">
+        <div style="flex:1; background:#fff8e6; border:2px solid #f5a623; border-radius:8px; padding:8px 10px;">
+          <span style="font-size:9px; text-transform:uppercase; letter-spacing:.8px; color:#b87a00; display:block; margin-bottom:2px;">N° Picking</span>
+          <strong id="lblPicking" style="font-size:20px; font-weight:800; color:#111; letter-spacing:1px;"></strong>
+        </div>
+        <div style="flex:1; background:#e8f1fb; border:2px solid #378add; border-radius:8px; padding:8px 10px;">
+          <span style="font-size:9px; text-transform:uppercase; letter-spacing:.8px; color:#185fa5; display:block; margin-bottom:2px;">N° Nota de Venta</span>
+          <strong id="lblNV" style="font-size:20px; font-weight:800; color:#111; letter-spacing:1px;"></strong>
+        </div>
       </div>
       <div class="label-row">
         <div class="label-field">
@@ -317,12 +328,7 @@
           <strong id="lblRef"></strong>
         </div>
       </div>
-      <div class="label-row">
-        <div class="label-field">
-          <span>Destino</span>
-          <strong id="lblDestino" style="font-size:11px;"></strong>
-        </div>
-      </div>
+
       <div class="barcode-wrap">
         <svg id="barcodesvg"></svg>
         <div class="barcode-code" id="barcodeCode"></div>
@@ -545,19 +551,27 @@ async function analyzeWithClaude(imageDataUrl) {
           role: 'user',
           content: [
             { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } },
-            { type: 'text', text: `Analiza esta etiqueta de caja de envío o despacho. Extrae toda la información posible y responde ÚNICAMENTE con un JSON válido sin markdown con estos campos:
+            { type: 'text', text: `Analiza esta etiqueta de caja de envío o despacho. Extrae toda la información y responde ÚNICAMENTE con JSON válido sin markdown:
 {
-  "raw_text": "todo el texto visible en la etiqueta, transcrito exactamente",
-  "picking": "CAMPO MÁS IMPORTANTE: el número de picking o nota de venta. Es un código numérico correlativo de exactamente 7 dígitos. Puede aparecer como: 'Picking: 1234567', 'N/V 1234567', 'Nota de Venta: 1234567', 'NV-1234567', o simplemente como un número de 7 dígitos en cualquier campo. Busca en TODOS los campos del texto cualquier secuencia de 7 dígitos consecutivos. Si aparece en el campo de transporte, nota de venta, referencia o cualquier otro, extráelo aquí de todas formas.",
-  "cliente": "nombre del destinatario o empresa receptora",
-  "descripcion": "descripción del contenido o tipo de producto",
-  "bulto": "número de bulto, guía de despacho o número de tracking",
+  "raw_text": "todo el texto visible transcrito exactamente",
+  "picking": "número de picking — ver regla abajo",
+  "nv": "número de nota de venta — ver regla abajo",
+  "cliente": "nombre del destinatario o empresa",
+  "descripcion": "descripción del contenido o producto",
+  "bulto": "número de bulto o guía de despacho",
   "destino": "dirección o destino completo",
-  "referencia": "cualquier otro código de referencia que NO sea el picking de 7 dígitos",
+  "referencia": "otro código que no sea picking ni nv",
   "confianza": "alta|media|baja"
 }
-REGLA CRÍTICA para picking: si encuentras un número de 7 dígitos en CUALQUIER campo (transporte, nota de venta, referencia, observaciones, etc.), ponlo en el campo "picking". Si hay varios números de 7 dígitos, elige el que esté asociado a palabras como "picking", "N/V", "nota de venta" o "pedido". Si no hay ninguno de 7 dígitos exactos, deja el campo vacío.
-Si un campo no aparece en la etiqueta, deja el string vacío.` }
+
+REGLA CRÍTICA para identificar picking y nota de venta:
+En la etiqueta aparecerán DOS números importantes. Pueden llamarse de distintas formas:
+- El PICKING puede aparecer como: "Picking", "N° Picking", "Transporte", "N° Transporte", u otros nombres. Es el número MÁS PEQUEÑO de los dos, generalmente de 5-6 dígitos (ejemplos: 498308, 498.308, 500710).
+- La NOTA DE VENTA puede aparecer como: "N/V", "N.V.", "Nota de Venta", "Nota Venta", "NV" u otros nombres. Es el número MÁS GRANDE de los dos, generalmente de 7 dígitos (ejemplos: 3456705, 3.456.705, 3441028).
+- IMPORTANTE: ignora los puntos de miles al comparar los tamaños (3.456.705 = 3456705 que es mayor que 498308).
+- Si hay dos números y no sabes cuál es cuál, el menor es picking y el mayor es nota de venta.
+- Extrae solo los dígitos, sin puntos ni espacios.
+Si un campo no aparece, deja el string vacío.` }
           ]
         }]
       })
@@ -599,6 +613,7 @@ function displayOCRResult(data) {
   document.getElementById('reviewActions').style.display = 'flex';
 
   document.getElementById('fPicking').value = data.picking || '';
+  document.getElementById('fNV').value = data.nv || '';
   document.getElementById('fCliente').value = data.cliente || '';
   document.getElementById('fDesc').value = data.descripcion || '';
   document.getElementById('fBulto').value = data.bulto || '';
@@ -617,6 +632,7 @@ function generateLabel() {
 
   currentData = {
     picking: document.getElementById('fPicking').value || '',
+    nv: document.getElementById('fNV').value || '',
     cliente: document.getElementById('fCliente').value || 'Sin nombre',
     descripcion: document.getElementById('fDesc').value || '',
     bulto: document.getElementById('fBulto').value || '',
@@ -647,10 +663,12 @@ function renderLabelPreview() {
   document.getElementById('lblCompany').textContent = cfg.company;
   document.getElementById('lblDate').textContent = `${currentData.dateStr} ${currentData.timeStr}`;
   document.getElementById('lblClient').textContent = currentData.cliente;
+  document.getElementById('lblDestino').textContent = currentData.destino || '';
   document.getElementById('lblDesc').textContent = currentData.descripcion;
   document.getElementById('lblPicking').textContent = currentData.picking || '—';
+  document.getElementById('lblNV').textContent = currentData.nv || '—';
   document.getElementById('lblBulto').textContent = currentData.bulto || '—';
-  document.getElementById('lblDestino').textContent = currentData.destino || '—';
+
   document.getElementById('lblRef').textContent = currentData.referencia || '—';
   document.getElementById('barcodeCode').textContent = currentData.barcode;
 
@@ -713,16 +731,23 @@ function printViaDialog() {
   <span class="company">${company}</span>
   <span class="fecha">${fecha}</span>
 </div>
-<div class="picking-box">
-  <span>N° Picking / Nota de Venta</span>
-  <strong>${d.picking || '—'}</strong>
+<div style="display:flex;gap:6px;margin-bottom:8px;">
+  <div class="picking-box" style="flex:1">
+    <span>N° Picking</span>
+    <strong>${d.picking || '—'}</strong>
+  </div>
+  <div class="picking-box" style="flex:1;background:#e8f1fb;border-color:#378add;">
+    <span style="color:#185fa5">N° Nota de Venta</span>
+    <strong>${d.nv || '—'}</strong>
+  </div>
 </div>
 <div class="cliente">${d.cliente || 'Sin nombre'}</div>
+<div class="desc" style="font-size:14px;color:#222;font-weight:600;margin-bottom:4px;">${d.destino || ''}</div>
 <div class="desc">${d.descripcion || ''}</div>
 <div class="grid">
   <div class="field"><span>Bulto / Guía</span><strong>${d.bulto || '—'}</strong></div>
   <div class="field"><span>Referencia</span><strong>${d.referencia || '—'}</strong></div>
-  <div class="field" style="grid-column:1/-1"><span>Destino</span><strong style="font-size:11px">${d.destino || '—'}</strong></div>
+
 </div></div>
 <div class="barcode-wrap">
   <img src="${barcodeDataUrl}" alt="barcode">
@@ -751,8 +776,9 @@ function generateZPL() {
   const cliente = (d.cliente || '').toUpperCase().substring(0,30);
   const desc = (d.descripcion || '').substring(0,40);
   const picking = (d.picking || '—').substring(0,20);
+  const nv = (d.nv || '—').substring(0,20);
   const bulto = (d.bulto || '—').substring(0,20);
-  const destino = (d.destino || '—').substring(0,45);
+  const destino = (d.destino || '').substring(0,45);
   const ref = (d.referencia || '—').substring(0,20);
   const company = (cfg.company || '').toUpperCase().substring(0,30);
   const fecha = (d.dateStr || '') + ' ' + (d.timeStr || '');
@@ -767,16 +793,17 @@ function generateZPL() {
 ^FO${sz.w-300},45^A0N,18,18^FD${fecha}^FS
 ^FO30,75^GB${sz.w-60},3,3^FS
 ^FO30,90^A0N,55,55^FD${cliente}^FS
-^FO30,155^A0N,28,28^FD${desc}^FS
+^FO30,155^A0N,32,32^FD${destino}^FS
+^FO30,200^A0N,22,22^FD${desc}^FS
 ^FO30,195^GB${sz.w-60},2,2^FS
-^FO30,205^A0N,20,20^FDPickin/N.Venta:^FS
-^FO260,200^A0N,38,38^FD${picking}^FS
+^FO30,205^A0N,18,18^FDPicking:^FS
+^FO160,200^A0N,36,36^FD${picking}^FS
+^FO${sz.w/2+20},205^A0N,18,18^FDN/V:^FS
+^FO${sz.w/2+90},200^A0N,36,36^FD${nv}^FS
 ^FO30,252^GB${sz.w-60},2,2^FS
 ^FO30,262^A0N,22,22^FDBulto/Guia:^FS
 ^FO220,262^A0N,22,22^FD${bulto}^FS
-^FO30,292^A0N,22,22^FDDestino:^FS
-^FO200,292^A0N,22,22^FD${destino}^FS
-^FO30,322^A0N,22,22^FDRef:^FS
+^FO30,292^A0N,22,22^FDRef:^FS
 ^FO200,322^A0N,22,22^FD${ref}^FS
 ^FO30,352^GB${sz.w-60},2,2^FS
 ^FO60,368^BY3,2,80
